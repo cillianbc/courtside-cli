@@ -51,7 +51,7 @@ pub struct Issue {
     pub kind: IssueKind,
     /// For a knock-on: the event (index into the visible events) whose
     /// issue this one follows from. Knock-ons are downgraded to Info, so
-    /// one slip is reported once (CONTEXT.md "Knock-on").
+    /// one slip is reported once.
     pub cause: Option<usize>,
 }
 

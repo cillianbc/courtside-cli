@@ -1,4 +1,4 @@
-//! Plants one slip in a copy of a corpus match (CONTEXT.md "Slip").
+//! Plants one slip in a copy of a corpus match.
 //!
 //! Each slip class finds the places in the match where it can be planted
 //! (its sites), picks one by seed or line, and edits the event log the way

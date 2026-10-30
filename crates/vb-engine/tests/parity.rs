@@ -17,46 +17,36 @@ use vb_engine::{IdGen, Match, Phase, fold};
 use vb_grammar::Team;
 
 /// (corpus path, file line, column) differences checked by hand and recorded
-/// in FORMAT-NOTES.md.
-const ACCEPTED: &[(&str, usize, &str)] = &[
-    // A serve in the same team touch as a reception (a missing point code
-    // before it): openvolley calls it reception phase; a serve is a serve.
-    (
-        "corpus-file",
-        75,
-        "phase",
-    ),
-    (
-        "corpus-file",
-        681,
-        "phase",
-    ),
-    (
-        "corpus-file",
-        719,
-        "phase",
-    ),
-    (
-        "corpus-file",
-        544,
-        "phase",
-    ),
-    (
-        "corpus-file",
-        683,
-        "phase",
-    ),
-    (
-        "corpus-file",
-        1009,
-        "phase",
-    ),
-    (
-        "corpus-file",
-        273,
-        "phase",
-    ),
-];
+/// in FORMAT-NOTES.md, from the corpus's own `expected.toml` (rows for
+/// this crate), so no file name is in the code.
+fn accepted() -> Vec<(String, usize, String)> {
+    expected("parity_accepted")
+        .iter()
+        .filter(|r| r.get("crate").and_then(|v| v.as_str()) == Some(env!("CARGO_PKG_NAME")))
+        .filter_map(|r| {
+            let path = r.get("path")?.as_str()?.to_owned();
+            let line = usize::try_from(r.get("line")?.as_integer()?).ok()?;
+            Some((path, line, r.get("column")?.as_str()?.to_owned()))
+        })
+        .collect()
+}
+
+/// One section of `testdata/expected.toml` (findings checked by hand; it
+/// lives with the private corpus). Empty without it.
+fn expected(section: &str) -> Vec<toml::Table> {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/expected.toml");
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    let table: toml::Table = text.parse().expect("expected.toml");
+    table
+        .get(section)
+        .and_then(|v| v.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|v| v.as_table().cloned())
+        .collect()
+}
 
 const SKILLS: &[&str] = &[
     "Serve",
@@ -108,6 +98,7 @@ impl Grouping {
 
 #[test]
 fn match_state_matches_openvolley() {
+    let accepted = accepted();
     let Some(oracle) = oracle_dir() else { return };
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata");
     let mut report = Vec::new();
@@ -198,7 +189,11 @@ fn match_state_matches_openvolley() {
             ];
             let mut check = |name: &'static str, ok: bool, detail: String| {
                 compared += 1;
-                if !ok && !ACCEPTED.contains(&(rel.as_str(), file_line, name)) {
+                if !ok
+                    && !accepted
+                        .iter()
+                        .any(|(p, l, c)| *p == rel && *l == file_line && c == name)
+                {
                     let d = diffs.entry(name).or_default();
                     d.0 += 1;
                     if d.1.len() < 3 {
@@ -248,7 +243,11 @@ fn match_state_matches_openvolley() {
 /// for a file whose names neither reader can decode (double-encoded:
 /// Windows-1250 read as 1252 and saved as UTF-8), so they aren't compared.
 fn openvolley_names(rel: &str, names: [String; 2]) -> Option<[String; 2]> {
-    if rel == "corpus-file" {
+    let undecodable = expected("undecodable_names");
+    if undecodable
+        .iter()
+        .any(|r| r.get("path").and_then(|v| v.as_str()) == Some(rel))
+    {
         return None;
     }
     let [home, visiting] = names.map(|n| n.trim().to_owned());

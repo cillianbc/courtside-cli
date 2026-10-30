@@ -1,7 +1,7 @@
 //! Phase 2 task 3: the fold reproduces the `[3SCOUT]` columns DataVolley
 //! and VolleyStation derive themselves (set 8, setter positions 9–10,
 //! players on court 14–25) on every line of the corpus, except lines where
-//! the file contradicts itself (listed in `ACCEPTED`, explained in
+//! the file contradicts itself (listed in `expected.toml`, explained in
 //! FORMAT-NOTES "Engine fold").
 //!
 //! Skips when `testdata/` is absent unless `COURTSIDE_REQUIRE_CORPUS=1`.
@@ -26,13 +26,50 @@ struct Entry {
 }
 
 /// (file name prefix, column group, number of lines) where the file's own
-/// columns contradict its codes or player table; see FORMAT-NOTES.
-const ACCEPTED: &[(&str, &str, usize)] = &[
-    // Setter position written as 0 for ten lines with no code changing it.
-    ("&corpus-file", "setter position", 10),
-    // Home court columns don't match the player table's set 1 lineup.
-    ("&corpus-file", "home court", 274),
-];
+/// columns contradict its codes or player table; see FORMAT-NOTES. Read
+/// from the corpus's `expected.toml`, so no file name is in the code.
+fn accepted() -> Vec<(String, String, usize)> {
+    expected("fold_accepted")
+        .iter()
+        .filter_map(|r| {
+            Some((
+                r.get("name")?.as_str()?.to_owned(),
+                r.get("group")?.as_str()?.to_owned(),
+                usize::try_from(r.get("lines")?.as_integer()?).ok()?,
+            ))
+        })
+        .collect()
+}
+
+/// One section of `testdata/expected.toml` (findings checked by hand; it
+/// lives with the private corpus). Empty without it.
+fn expected(section: &str) -> Vec<toml::Table> {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/expected.toml");
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    let table: toml::Table = text.parse().expect("expected.toml");
+    table
+        .get(section)
+        .and_then(|v| v.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|v| v.as_table().cloned())
+        .collect()
+}
+
+/// (file name prefix, count) rows of an `expected.toml` section.
+fn counts(section: &str, field: &str) -> Vec<(String, usize)> {
+    expected(section)
+        .iter()
+        .filter_map(|r| {
+            Some((
+                r.get("name")?.as_str()?.to_owned(),
+                usize::try_from(r.get(field)?.as_integer()?).ok()?,
+            ))
+        })
+        .collect()
+}
 
 fn corpus() -> Option<(std::path::PathBuf, Manifest)> {
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata");
@@ -120,11 +157,12 @@ fn fold_reproduces_the_files_own_columns() {
         }
     }
     assert!(checked > 0, "no scout lines");
+    let accepted = accepted();
     let mut unexpected = Vec::new();
     for ((file, group), lines) in &mismatches {
-        let accepted = ACCEPTED
+        let accepted = accepted
             .iter()
-            .any(|(f, g, n)| file.starts_with(f) && g == group && *n == lines.len());
+            .any(|(f, g, n)| file.starts_with(f.as_str()) && g == group && *n == lines.len());
         eprintln!(
             "{file} {group}: {} lines{}",
             lines.len(),
@@ -181,7 +219,7 @@ fn fold_is_fast_enough_to_run_on_every_change() {
 /// Phase 2 task 5: `.dvw` → engine → `.dvw` gives back the same bytes,
 /// headers on every file,
 /// except on lines where the file's own derived columns contradict it
-/// (see `ACCEPTED` above and the VolleyStation rotation-line quirk), which
+/// (see `accepted` above and the VolleyStation rotation-line quirk), which
 /// the engine writes corrected. Only derived columns may differ.
 #[test]
 fn dvw_round_trips_through_the_engine() {
@@ -203,7 +241,7 @@ fn dvw_round_trips_through_the_engine() {
         let mut headers = out.clone();
         headers.scout = dvw.scout.clone();
         let changed = player_rows_changed(&bytes, &headers.to_bytes().expect("write"));
-        if changed != Some(allowed(HEADER_REWRITES, name)) {
+        if changed != Some(allowed(&header_rewrites(), name)) {
             report.push(format!("{}: headers differ: {changed:?}", entry.path));
         }
         // And they really are regenerated: blank set 1's scores and
@@ -234,7 +272,8 @@ fn dvw_round_trips_through_the_engine() {
         let mut regen = regen_match.to_dvw(&blank);
         regen.scout = dvw.scout.clone();
         let changed = player_rows_changed(&bytes, &regen.to_bytes().expect("write"));
-        let expected = allowed(HEADER_REWRITES, name) + allowed(SUBSTITUTES_ONLY_ON_SHEET, name);
+        let expected =
+            allowed(&header_rewrites(), name) + allowed(&substitutes_only_on_sheet(), name);
         if changed != Some(expected) {
             report.push(format!(
                 "{}: regenerated headers differ: {changed:?}",
@@ -267,9 +306,9 @@ fn dvw_round_trips_through_the_engine() {
                     entry.path
                 ));
             }
-        } else if !ROUND_TRIP_REWRITES
+        } else if !round_trip_rewrites()
             .iter()
-            .any(|(f, n)| name.starts_with(f) && *n == changed)
+            .any(|(f, n)| name.starts_with(f.as_str()) && *n == changed)
         {
             report.push(format!("{}: {changed} lines rewritten", entry.path));
         }
@@ -302,29 +341,33 @@ fn player_rows_changed(a: &[u8], b: &[u8]) -> Option<usize> {
     Some(n)
 }
 
-fn allowed(list: &[(&str, usize)], name: &str) -> usize {
+fn allowed(list: &[(String, usize)], name: &str) -> usize {
     list.iter()
-        .filter(|(f, _)| name.starts_with(f))
+        .filter(|(f, _)| name.starts_with(f.as_str()))
         .map(|(_, n)| n)
         .sum()
 }
 
 /// Player rows the engine rewrites: a libero who touches the ball in set 1
 /// is marked as having played it, though the team sheet says not (the file
-/// whose set 1 sheet is known to be wrong, see `ACCEPTED`).
-const HEADER_REWRITES: &[(&str, usize)] = &[("&corpus-file", 1)];
+/// whose set 1 sheet is known to be wrong, see `accepted`).
+fn header_rewrites() -> Vec<(String, usize)> {
+    counts("header_rewrites", "rows")
+}
 
 /// Player rows whose `*` (came on as a substitute) only the team sheet
 /// knows: no substitution code brings the player on (FORMAT-NOTES
 /// "Validator": missing substitution codes), so blanking it loses it.
-const SUBSTITUTES_ONLY_ON_SHEET: &[(&str, usize)] =
-    &[("&corpus-file", 1), ("&corpus-file", 1), ("&corpus-file", 2)];
+fn substitutes_only_on_sheet() -> Vec<(String, usize)> {
+    counts("substitutes_only_on_sheet", "rows")
+}
 
 /// Files whose derived columns the engine rewrites, and how many lines:
-/// the `ACCEPTED` glitches plus VolleyStation rotation lines written with
+/// the `accepted` glitches plus VolleyStation rotation lines written with
 /// the following substitution already applied.
-const ROUND_TRIP_REWRITES: &[(&str, usize)] =
-    &[("&corpus-file", 10), ("&corpus-file", 274), ("2024-03-23 corpus-file", 7)];
+fn round_trip_rewrites() -> Vec<(String, usize)> {
+    counts("round_trip_rewrites", "lines")
+}
 
 /// The validator runs on every corpus file. Prints issue counts per rule
 /// and message so false positives show up in review; real scouting slips

@@ -1,5 +1,5 @@
 //! Phase 2 task 7: the validator against openvolley's `dv_validate` on a
-//! bad-file set (terms in CONTEXT.md).
+//! bad-file set.
 //!
 //! `testdata/bad/recipes.toml` (local, like the corpus) lists the bad
 //! files: a corpus source file, a slip class and a seed (or a `[3SCOUT]`

@@ -398,93 +398,24 @@ T2;Away;0;;;;\n\
     /// so for those this only checks that the engine runs and every issue
     /// has a file line.
     /// File-level findings in corpus files checked by hand and right
-    /// (FORMAT-NOTES "Encodings", CORPUS.md intake 2026-10-19): (start of
-    /// the path under testdata, start of the message). Any other is a
-    /// problem. A path is cut short where the file name has players' names.
-    const KNOWN: &[(&str, &str)] = &[
-        // The day/month order really is ambiguous in these.
-        ("corpus-file", "match date"),
-        ("corpus-file", "match date"),
-        ("corpus-file", "match date"),
-        // Code page 1: the encoding is guessed, as the warning says.
-        ("corpus-file", "code page 1"),
-        ("corpus-file", "code page 1"),
-        (
-            "corpus-file",
-            "code page 1",
-        ),
-        ("corpus-file", "code page 1"),
-        ("dvw/datavolley3/corpus-file", "code page 1"),
-        ("corpus-file", "code page 1"),
-        (
-            "corpus-file",
-            "code page 1",
-        ),
-        ("corpus-file", "code page 1"),
-        ("corpus-file", "code page 1"),
-        ("corpus-file", "code page 1"),
-        // The file really lists home shirt 1 twice.
-        ("corpus-file", "shirt number 1 listed twice"),
-        // UTF-8 names in a file that says 1252: the plain columns are
-        // mojibake, the Unicode copies are right.
-        ("corpus-file", "first name differs"),
-        ("corpus-file", "last name differs"), // VolleyStation's date order is a season setting; these dates and
-        // their export stamps have day and month both ≤ 12 (2026-10-27).
-        ("corpus-file", "match date"),
-        (
-            "corpus-file",
-            "match date",
-        ),
-        (
-            "corpus-file",
-            "match date",
-        ),
-        ("corpus-file", "match date"),
-        (
-            "corpus-file",
-            "match date",
-        ),
-        ("corpus-file", "match date"),
-        ("corpus-file", "match date"),
-        ("corpus-file", "match date"),
-        ("corpus-file", "match date"),
-        ("corpus-file", "match date"),
-        ("corpus-file", "match date"),
-        ("corpus-file", "match date"),
-        ("corpus-file", "match date"),
-        ("corpus-file", "match date"),
-        ("corpus-file", "match date"),
-        ("corpus-file", "match date"),
-        ("corpus-file", "match date"),
-        ("corpus-file", "match date"),
-        // Code page 1 (PC default), read by the guess (2026-10-27 batch).
-        (
-            "corpus-file",
-            "code page 1",
-        ),
-        ("corpus-file", "code page 1"),
-        ("corpus-file", "code page 1"),
-        ("corpus-file", "code page 1"),
-        ("corpus-file", "code page 1"),
-        (
-            "corpus-file",
-            "code page 1",
-        ),
-        // The files really list visiting shirt 0 twice.
-        (
-            "corpus-file",
-            "shirt number 0 listed twice",
-        ),
-        (
-            "corpus-file",
-            "shirt number 0 listed twice",
-        ),
-        // The plain column drops a diacritic its Unicode copy has (D/Đ).
-        (
-            "corpus-file",
-            "last name differs",
-        ),
-    ];
+    /// (FORMAT-NOTES "Encodings"): (start of the path
+    /// under testdata, start of the message), from the corpus's own
+    /// `expected.toml`, so no file name is in the code. Any other is a
+    /// problem.
+    fn known(root: &Path) -> Vec<(String, String)> {
+        let Ok(text) = std::fs::read_to_string(root.join("expected.toml")) else {
+            return Vec::new();
+        };
+        let table: toml::Table = text.parse().unwrap();
+        let rows = table.get("validate_known").and_then(|v| v.as_array());
+        rows.into_iter()
+            .flatten()
+            .filter_map(|r| {
+                let field = |k: &str| r.get(k).and_then(|v| v.as_str()).map(str::to_owned);
+                Some((field("path")?, field("message")?))
+            })
+            .collect()
+    }
 
     #[test]
     fn corpus_has_no_file_level_issues() {
@@ -497,12 +428,13 @@ T2;Away;0;;;;\n\
             return;
         }
         let mut stack = vec![root.clone()];
+        let known = known(&root);
         let mut checked = 0;
         let mut problems = Vec::new();
         while let Some(dir) = stack.pop() {
             for entry in std::fs::read_dir(&dir).unwrap() {
                 let path = entry.unwrap().path();
-                // Doctored fixtures aren't matches (CORPUS.md).
+                // Doctored fixtures aren't matches.
                 if path.is_dir() && path.file_name().is_some_and(|n| n == "malformed") {
                     continue;
                 }
@@ -519,9 +451,9 @@ T2;Away;0;;;;\n\
                         .to_string_lossy()
                         .replace('\\', "/");
                     for i in validate(&path, &std::fs::read(&path).unwrap()) {
-                        let known = KNOWN
-                            .iter()
-                            .any(|(p, m)| rel.starts_with(p) && i.message.starts_with(m));
+                        let known = known.iter().any(|(p, m)| {
+                            rel.starts_with(p.as_str()) && i.message.starts_with(m.as_str())
+                        });
                         if (i.rule.is_none() || i.line.is_none()) && !known {
                             problems.push(format!("{}:{i}", path.display()));
                         }

@@ -15,70 +15,36 @@ use dvw_codec::dvw::CourtCoding;
 use vb_grammar::{Code, Player, Skill, Team};
 
 /// (corpus path, file line, column) differences checked by hand and recorded
-/// in FORMAT-NOTES.md, where openvolley is wrong.
-const ACCEPTED: &[(&str, usize, &str)] = &[
-    // `$$` codes: custom text starts at column 15 (`*$$FH=` + nine `~`),
-    // and `*$$BH!~~~~3~~2` ends at the blocker count; openvolley shifts or
-    // invents custom text for a `$$` player.
-    ("corpus-file", 996, "custom_code"),
-    ("corpus-file", 311, "custom_code"),
-    ("corpus-file", 340, "custom_code"),
-    ("corpus-file", 478, "custom_code"),
-    ("corpus-file", 730, "custom_code"),
-    ("corpus-file", 888, "custom_code"),
-    // Custom text `ROT` on a serve: openvolley turns the serve into a
-    // "Rotation error" skill and blanks its fields; the code is a serve.
-    (
-        "corpus-file",
-        186,
-        "skill",
-    ),
-    (
-        "corpus-file",
-        186,
-        "evaluation_code",
-    ),
-    (
-        "corpus-file",
-        186,
-        "player_number",
-    ),
-    (
-        "corpus-file",
-        186,
-        "start_zone",
-    ),
-    (
-        "corpus-file",
-        186,
-        "end_zone",
-    ),
-    (
-        "corpus-file",
-        669,
-        "skill",
-    ),
-    (
-        "corpus-file",
-        669,
-        "evaluation_code",
-    ),
-    (
-        "corpus-file",
-        669,
-        "player_number",
-    ),
-    (
-        "corpus-file",
-        669,
-        "start_zone",
-    ),
-    (
-        "corpus-file",
-        669,
-        "end_zone",
-    ),
-];
+/// in FORMAT-NOTES.md, where openvolley is wrong, from the corpus's own `expected.toml` (rows for
+/// this crate), so no file name is in the code.
+fn accepted() -> Vec<(String, usize, String)> {
+    expected("parity_accepted")
+        .iter()
+        .filter(|r| r.get("crate").and_then(|v| v.as_str()) == Some(env!("CARGO_PKG_NAME")))
+        .filter_map(|r| {
+            let path = r.get("path")?.as_str()?.to_owned();
+            let line = usize::try_from(r.get("line")?.as_integer()?).ok()?;
+            Some((path, line, r.get("column")?.as_str()?.to_owned()))
+        })
+        .collect()
+}
+
+/// One section of `testdata/expected.toml` (findings checked by hand; it
+/// lives with the private corpus). Empty without it.
+fn expected(section: &str) -> Vec<toml::Table> {
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata/expected.toml");
+    let Ok(text) = std::fs::read_to_string(path) else {
+        return Vec::new();
+    };
+    let table: toml::Table = text.parse().expect("expected.toml");
+    table
+        .get(section)
+        .and_then(|v| v.as_array())
+        .into_iter()
+        .flatten()
+        .filter_map(|v| v.as_table().cloned())
+        .collect()
+}
 
 fn oracle_dir() -> Option<PathBuf> {
     let dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target/parity/oracle");
@@ -185,6 +151,7 @@ fn ours(
 
 #[test]
 fn parsed_codes_match_openvolley() {
+    let accepted = accepted();
     let Some(oracle) = oracle_dir() else { return };
     let corpus = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../testdata");
     let mut report = Vec::new();
@@ -232,7 +199,11 @@ fn parsed_codes_match_openvolley() {
                     continue;
                 };
                 compared += 1;
-                if my_value != value && !ACCEPTED.contains(&(rel.as_str(), file_line, col)) {
+                if my_value != value
+                    && !accepted
+                        .iter()
+                        .any(|(p, l, c)| *p == rel && *l == file_line && c == col)
+                {
                     let d = diffs.entry(col.to_owned()).or_default();
                     d.0 += 1;
                     if d.1.len() < 3 {
@@ -261,7 +232,11 @@ fn parsed_codes_match_openvolley() {
 /// for a file whose names neither reader can decode (double-encoded:
 /// Windows-1250 read as 1252 and saved as UTF-8), so they aren't compared.
 fn openvolley_names(rel: &str, names: [String; 2]) -> Option<[String; 2]> {
-    if rel == "corpus-file" {
+    let undecodable = expected("undecodable_names");
+    if undecodable
+        .iter()
+        .any(|r| r.get("path").and_then(|v| v.as_str()) == Some(rel))
+    {
         return None;
     }
     let [home, visiting] = names.map(|n| n.trim().to_owned());
