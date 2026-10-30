@@ -21,6 +21,9 @@ pub struct RosterPlayer {
     /// Sets 1–5.
     pub starting_zones: [StartingZone; 5],
     pub libero: bool,
+    /// `.dvw` role: 1 libero, 2 outside, 3 opposite, 4 middle, 5 setter,
+    /// 6 other; `None` when the team sheet doesn't say.
+    pub role: Option<u8>,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -225,6 +228,7 @@ mod tests {
             number,
             starting_zones: zones,
             libero: false,
+            role: None,
         };
         use StartingZone::{None as N, Substitute as S, Zone as Z};
         let sheet = TeamSheet {

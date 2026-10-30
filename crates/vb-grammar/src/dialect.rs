@@ -1,7 +1,8 @@
 //! What each evaluation symbol means, per skill and dialect (PRD I-06).
 //!
-//! The standard table follows the DataVolley manual; the volleymetrics and
-//! german overrides follow openvolley's `skill_evaluation_decoder`. A season
+//! The standard table gives each symbol's usual meaning in our own words;
+//! the volleymetrics and german overrides follow openvolley's
+//! `skill_evaluation_decoder`. A season
 //! can start from any dialect and override individual entries.
 
 use std::collections::HashMap;
@@ -17,45 +18,45 @@ pub enum Dialect {
 
 const STANDARD: &[(char, char, &str)] = &[
     ('S', '=', "Error"),
-    ('S', '/', "Positive, no attack"),
-    ('S', '-', "Negative, opponent free attack"),
-    ('S', '+', "Positive, opponent some attack"),
+    ('S', '/', "Good, the pass can't be attacked"),
+    ('S', '-', "Weak, an easy pass"),
+    ('S', '+', "Good, the pass is under pressure"),
     ('S', '#', "Ace"),
-    ('S', '!', "OK, no first tempo possible"),
+    ('S', '!', "Fair, the quick attack is off"),
     ('R', '=', "Error"),
-    ('R', '/', "Poor, no attack"),
-    ('R', '-', "Negative, limited attack"),
-    ('R', '+', "Positive, attack"),
-    ('R', '#', "Perfect pass"),
-    ('R', '!', "OK, no first tempo possible"),
+    ('R', '/', "Poor, no attack from it"),
+    ('R', '-', "Weak, few attack options"),
+    ('R', '+', "Good, an attack from it"),
+    ('R', '#', "Perfect"),
+    ('R', '!', "Fair, the quick attack is off"),
     ('A', '=', "Error"),
-    ('A', '/', "Blocked"),
-    ('A', '-', "Poor, easily dug"),
-    ('A', '!', "Blocked for reattack"),
-    ('A', '+', "Positive, good attack"),
-    ('A', '#', "Winning attack"),
+    ('A', '/', "Blocked for the point"),
+    ('A', '-', "Weak, dug easily"),
+    ('A', '!', "Blocked back, attacked again"),
+    ('A', '+', "Good, kept in play"),
+    ('A', '#', "Kill"),
     ('B', '=', "Error"),
-    ('B', '/', "Invasion"),
-    ('B', '-', "Poor, opposition to replay"),
-    ('B', '+', "Positive, block touch"),
-    ('B', '#', "Winning block"),
-    ('B', '!', "Poor, opposition to replay"),
+    ('B', '/', "Over the net"),
+    ('B', '-', "Weak, the attackers play again"),
+    ('B', '+', "Good, a touch"),
+    ('B', '#', "Stuff block"),
+    ('B', '!', "Weak, the attackers play again"),
     ('D', '=', "Error"),
-    ('D', '/', "Ball directly back over net"),
-    ('D', '-', "No structured attack possible"),
-    ('D', '#', "Perfect dig"),
-    ('D', '+', "Good dig"),
-    ('D', '!', "OK, no first tempo possible"),
+    ('D', '/', "Straight back over the net"),
+    ('D', '-', "Kept up, no set attack"),
+    ('D', '#', "Perfect"),
+    ('D', '+', "Good"),
+    ('D', '!', "Fair, the quick attack is off"),
     ('E', '=', "Error"),
     ('E', '-', "Poor"),
     ('E', '/', "Poor"),
-    ('E', '+', "Positive"),
+    ('E', '+', "Good"),
     ('E', '#', "Perfect"),
-    ('E', '!', "OK"),
+    ('E', '!', "Fair"),
     ('F', '=', "Error"),
     ('F', '/', "Poor"),
-    ('F', '!', "OK, no first tempo possible"),
-    ('F', '-', "OK, only high set possible"),
+    ('F', '!', "Fair, the quick attack is off"),
+    ('F', '-', "Fair, only a high set"),
     ('F', '+', "Good"),
     ('F', '#', "Perfect"),
 ];
@@ -118,7 +119,7 @@ mod tests {
     fn standard_meanings() {
         let t = EvaluationTable::new(Dialect::Standard);
         assert_eq!(t.meaning(Skill::Serve, '#'), Some("Ace"));
-        assert_eq!(t.meaning(Skill::Block, '/'), Some("Invasion"));
+        assert_eq!(t.meaning(Skill::Block, '/'), Some("Over the net"));
         assert_eq!(t.meaning(Skill::Attack, '?'), None);
         assert_eq!(t.meaning(Skill::Green, '#'), None);
     }

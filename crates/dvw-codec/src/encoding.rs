@@ -44,8 +44,10 @@ impl TextEncoding {
     /// Shift_JIS when many high bytes are in 0x81–0x9F (lead bytes, rare in
     /// Western text) and it decodes cleanly, Windows-1251 when most high
     /// bytes are letters in whole-word runs of three or more (Cyrillic
-    /// names), else Windows-1252. Windows-1250 and 1252 can't be told apart
-    /// this way, so Central European files stay 1252.
+    /// names), Windows-1250 when a byte inside a word is a Central European
+    /// letter there but a symbol or nothing in 1252 (`Ź` 0x8F, `ł` `³`,
+    /// `ż` `¿`, …) or a word ends in `Æ`/`æ` (the `-IĆ` of a surname), else
+    /// Windows-1252.
     pub fn guess(bytes: &[u8]) -> Self {
         let high = bytes.iter().filter(|b| **b >= 0x80).count();
         if high == 0 {
@@ -67,6 +69,10 @@ impl TextEncoding {
         }
         if in_words * 2 > high {
             return TextEncoding(encoding_rs::WINDOWS_1251);
+        }
+        let cp1250 = TextEncoding(encoding_rs::WINDOWS_1250);
+        if central_european(bytes) && cp1250.decode(bytes).is_some() {
+            return cp1250;
         }
         Self::WINDOWS_1252
     }
@@ -94,6 +100,24 @@ impl TextEncoding {
         let (bytes, _, unmappable) = self.0.encode(text);
         (!unmappable).then(|| bytes.into_owned())
     }
+}
+
+/// Bytes that are letters in Windows-1250 but symbols, or unassigned, in
+/// Windows-1252: Ť Ź ť Ł Ą Ż ł ą Ľ ľ ż.
+const LETTERS_ONLY_IN_1250: [u8; 11] = [
+    0x8d, 0x8f, 0x9d, 0xa3, 0xa5, 0xaf, 0xb3, 0xb9, 0xbc, 0xbe, 0xbf,
+];
+
+/// Whether the text reads as Central European: a 1250-only letter next to
+/// another letter, or a word ending in 0xC6/0xE6 (`Ć`/`ć` in 1250, `Æ`/`æ`
+/// in 1252, which hardly ends a word).
+fn central_european(bytes: &[u8]) -> bool {
+    let letter = |b: u8| b.is_ascii_alphabetic() || b >= 0xc0;
+    bytes.windows(3).any(|w| {
+        let [before, b, after] = [w[0], w[1], w[2]];
+        (LETTERS_ONLY_IN_1250.contains(&b) && (letter(before) || letter(after)))
+            || (matches!(b, 0xc6 | 0xe6) && letter(before) && !letter(after))
+    })
 }
 
 #[cfg(test)]
@@ -125,6 +149,22 @@ mod tests {
             "0;5;Lefèvre;Hélène;\r\n0;9;Müller;Zoë;",
         );
         assert_eq!(TextEncoding::guess(&fr), TextEncoding::WINDOWS_1252);
+        let hr = enc(
+            encoding_rs::WINDOWS_1250,
+            "0;5;BRODARIĆ;Tiha;\r\n0;9;Kovel;Ostrina;",
+        );
+        assert_eq!(TextEncoding::guess(&hr).name(), "windows-1250");
+        let pl = enc(
+            encoding_rs::WINDOWS_1250,
+            "0;5;Wróbel;Łucja;\r\n0;9;Kowalczyk;Źaneta;",
+        );
+        assert_eq!(TextEncoding::guess(&pl).name(), "windows-1250");
+        // Danish and Norwegian letters stay 1252.
+        let da = enc(
+            encoding_rs::WINDOWS_1252,
+            "0;5;Sæther;Bjørn;\r\n0;9;Løkke;Åse;",
+        );
+        assert_eq!(TextEncoding::guess(&da), TextEncoding::WINDOWS_1252);
     }
 
     #[test]

@@ -11,7 +11,7 @@ members = [
 ]
 
 [workspace.package]
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
 rust-version = "1.85"
 license = "AGPL-3.0-only"
@@ -30,6 +30,8 @@ clap = { version = "4", features = ["derive"] }
 csv = "1"
 encoding_rs = "0.8"
 insta = "1"
+# PDF reading only: no dates, threads or images.
+lopdf = { version = "0.36", default-features = false }
 proptest = "1"
 # bundled: the same SQLite on every platform, no system library.
 rusqlite = { version = "0.40", features = ["bundled"] }

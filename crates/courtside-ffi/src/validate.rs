@@ -49,6 +49,7 @@ pub fn rule_name(r: Rule) -> &'static str {
         Rule::Substitution => "substitution",
         Rule::ServeReception => "serve/reception",
         Rule::Code => "code",
+        Rule::Roles => "roles",
     }
 }
 
@@ -427,7 +428,62 @@ T2;Away;0;;;;\n\
         // UTF-8 names in a file that says 1252: the plain columns are
         // mojibake, the Unicode copies are right.
         ("corpus-file", "first name differs"),
-        ("corpus-file", "last name differs"),
+        ("corpus-file", "last name differs"), // VolleyStation's date order is a season setting; these dates and
+        // their export stamps have day and month both ≤ 12 (2026-10-27).
+        ("corpus-file", "match date"),
+        (
+            "corpus-file",
+            "match date",
+        ),
+        (
+            "corpus-file",
+            "match date",
+        ),
+        ("corpus-file", "match date"),
+        (
+            "corpus-file",
+            "match date",
+        ),
+        ("corpus-file", "match date"),
+        ("corpus-file", "match date"),
+        ("corpus-file", "match date"),
+        ("corpus-file", "match date"),
+        ("corpus-file", "match date"),
+        ("corpus-file", "match date"),
+        ("corpus-file", "match date"),
+        ("corpus-file", "match date"),
+        ("corpus-file", "match date"),
+        ("corpus-file", "match date"),
+        ("corpus-file", "match date"),
+        ("corpus-file", "match date"),
+        ("corpus-file", "match date"),
+        // Code page 1 (PC default), read by the guess (2026-10-27 batch).
+        (
+            "corpus-file",
+            "code page 1",
+        ),
+        ("corpus-file", "code page 1"),
+        ("corpus-file", "code page 1"),
+        ("corpus-file", "code page 1"),
+        ("corpus-file", "code page 1"),
+        (
+            "corpus-file",
+            "code page 1",
+        ),
+        // The files really list visiting shirt 0 twice.
+        (
+            "corpus-file",
+            "shirt number 0 listed twice",
+        ),
+        (
+            "corpus-file",
+            "shirt number 0 listed twice",
+        ),
+        // The plain column drops a diacritic its Unicode copy has (D/Đ).
+        (
+            "corpus-file",
+            "last name differs",
+        ),
     ];
 
     #[test]

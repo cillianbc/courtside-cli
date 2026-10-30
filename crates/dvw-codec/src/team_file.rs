@@ -1,6 +1,6 @@
 //! Team files: DataVolley's `.sq` (tab-separated, `DV-Team-2`, also read
-//! and written by VolleyStation) and VolleyStation's `.vst` (JSON). Layouts
-//! in docs/research/VOLLEYSTATION.md "Team files". Only reading for now.
+//! and written by VolleyStation) and VolleyStation's `.vst` (JSON), as the
+//! files themselves lay them out. Only reading for now.
 
 use serde_json::Value;
 
@@ -14,11 +14,75 @@ pub struct TeamFile {
     pub code: String,
     pub name: String,
     pub short_code: String,
-    /// As written: `.sq` keeps "Last First", `.vst` is given as first and
-    /// last name and joined here the same way.
-    pub coach: String,
-    pub assistant: String,
+    pub staff: Staff,
+    /// The team's home hall (`.vst` `homeCourtName`; `.sq` has none).
+    pub home_court: String,
     pub players: Vec<TeamFilePlayer>,
+}
+
+/// A staff member's name.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Person {
+    pub last_name: String,
+    pub first_name: String,
+}
+
+impl Person {
+    /// From "Last First", as `.sq` and `.dvw` write a coach: the first word
+    /// is the last name, as VolleyStation reads it.
+    pub fn from_last_first(s: &str) -> Self {
+        let s = s.trim();
+        let (last, first) = s.split_once(' ').unwrap_or((s, ""));
+        Person {
+            last_name: last.to_owned(),
+            first_name: first.trim().to_owned(),
+        }
+    }
+
+    /// "Last First", or whichever of the two is given.
+    pub fn last_first(&self) -> String {
+        [self.last_name.trim(), self.first_name.trim()]
+            .into_iter()
+            .filter(|x| !x.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.last_name.trim().is_empty() && self.first_name.trim().is_empty()
+    }
+}
+
+/// A team's staff, as VolleyStation keeps it. `.sq` and `.dvw` hold only
+/// the coach and the first assistant.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct Staff {
+    pub coach: Person,
+    pub assistant: Person,
+    pub assistant2: Person,
+    pub physio: Person,
+    pub doctor: Person,
+}
+
+/// `.vst` `staff` keys, in VolleyStation's order.
+const STAFF_KEYS: [&str; 5] = [
+    "coach",
+    "assistantCoach",
+    "assistantCoach2",
+    "therapist",
+    "medicalDoctor",
+];
+
+impl Staff {
+    fn people(&self) -> [&Person; 5] {
+        [
+            &self.coach,
+            &self.assistant,
+            &self.assistant2,
+            &self.physio,
+            &self.doctor,
+        ]
+    }
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -36,6 +100,10 @@ pub struct TeamFilePlayer {
     /// ISO `YYYY-MM-DD`, when the file gives one that reads one way only.
     pub birth_date: Option<String>,
     pub height_cm: Option<u16>,
+    /// `.vst` only.
+    pub weight_kg: Option<u16>,
+    /// Attack reach (`.vst` `spikeHeight`).
+    pub reach_cm: Option<u16>,
 }
 
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
@@ -101,9 +169,13 @@ pub fn parse_sq(bytes: &[u8]) -> Result<TeamFile, TeamFileError> {
     let mut file = TeamFile {
         code: col(&team, 0),
         name: text_col(&team, 1, 6),
-        coach: text_col(&team, 2, 7),
-        assistant: text_col(&team, 3, 8),
+        staff: Staff {
+            coach: Person::from_last_first(&text_col(&team, 2, 7)),
+            assistant: Person::from_last_first(&text_col(&team, 3, 8)),
+            ..Staff::default()
+        },
         short_code: text_col(&team, 4, 9),
+        home_court: String::new(),
         players: Vec::new(),
     };
     for line in lines.filter(|l| !l.trim().is_empty()) {
@@ -138,6 +210,8 @@ pub fn parse_sq(bytes: &[u8]) -> Result<TeamFile, TeamFileError> {
                 .parse()
                 .ok()
                 .filter(|h| (100..=250).contains(h)),
+            weight_kg: None,
+            reach_cm: None,
         });
     }
     Ok(file)
@@ -156,13 +230,16 @@ pub fn parse_vst(bytes: &[u8]) -> Result<TeamFile, TeamFileError> {
     };
     let person = |key: &str| {
         let p = v.get("staff").and_then(|st| st.get(key));
-        p.map_or(String::new(), |p| {
-            [s(p, "lastName"), s(p, "firstName")]
-                .into_iter()
-                .filter(|x| !x.is_empty())
-                .collect::<Vec<_>>()
-                .join(" ")
+        p.map_or(Person::default(), |p| Person {
+            last_name: s(p, "lastName"),
+            first_name: s(p, "firstName"),
         })
+    };
+    let measure = |p: &Value, k: &str, range: std::ops::RangeInclusive<u16>| {
+        p.get(k)
+            .and_then(Value::as_u64)
+            .and_then(|x| u16::try_from(x).ok())
+            .filter(|x| range.contains(x))
     };
     let name = s(&v, "name");
     if name.is_empty() && s(&v, "code").is_empty() {
@@ -205,11 +282,9 @@ pub fn parse_vst(bytes: &[u8]) -> Result<TeamFile, TeamFileError> {
                         )
                     })
                     .map(str::to_owned),
-                height_cm: p
-                    .get("height")
-                    .and_then(Value::as_u64)
-                    .and_then(|h| u16::try_from(h).ok())
-                    .filter(|h| (100..=250).contains(h)),
+                height_cm: measure(p, "height", 100..=250),
+                weight_kg: measure(p, "weight", 30..=200),
+                reach_cm: measure(p, "spikeHeight", 150..=450),
             })
         })
         .collect();
@@ -217,8 +292,14 @@ pub fn parse_vst(bytes: &[u8]) -> Result<TeamFile, TeamFileError> {
         code: s(&v, "code"),
         short_code: s(&v, "shortCode"),
         name,
-        coach: person("coach"),
-        assistant: person("assistantCoach"),
+        staff: Staff {
+            coach: person(STAFF_KEYS[0]),
+            assistant: person(STAFF_KEYS[1]),
+            assistant2: person(STAFF_KEYS[2]),
+            physio: person(STAFF_KEYS[3]),
+            doctor: person(STAFF_KEYS[4]),
+        },
+        home_court: s(&v, "homeCourtName"),
         players,
     })
 }
@@ -230,7 +311,9 @@ pub fn parse_vst(bytes: &[u8]) -> Result<TeamFile, TeamFileError> {
 /// (`?` for what none can; the Unicode copies keep it). Birth dates are
 /// not written: DataVolley reads them in the PC's date format.
 pub fn write_sq(team: &TeamFile) -> Vec<u8> {
-    let texts = std::iter::once([&team.name, &team.coach, &team.assistant, &team.short_code])
+    let coach = team.staff.coach.last_first();
+    let assistant = team.staff.assistant.last_first();
+    let texts = std::iter::once([&team.name, &coach, &assistant, &team.short_code])
         .flat_map(|x| x.into_iter().cloned())
         .chain(team.players.iter().flat_map(|p| {
             [
@@ -261,13 +344,13 @@ pub fn write_sq(team: &TeamFile) -> Vec<u8> {
         [
             plain(&team.code),
             plain(&team.name),
-            plain(&team.coach),
-            plain(&team.assistant),
+            plain(&coach),
+            plain(&assistant),
             plain(&team.short_code),
             codepage.to_owned(),
             embedded(&team.name),
-            embedded(&team.coach),
-            embedded(&team.assistant),
+            embedded(&coach),
+            embedded(&assistant),
             embedded(&team.short_code),
             String::new(),
         ]
@@ -328,24 +411,20 @@ pub fn write_sq(team: &TeamFile) -> Vec<u8> {
 }
 
 /// Writes a `.vst`: VolleyStation's team JSON (no version field; absent
-/// values left out). Staff names are split as VolleyStation reads `.sq`
-/// coaches: the first word is the last name.
+/// values left out).
 pub fn write_vst(team: &TeamFile) -> Vec<u8> {
     use serde_json::{Map, json};
-    let person = |s: &str| -> Option<Value> {
-        let s = s.trim();
-        if s.is_empty() {
-            return None;
-        }
-        let (last, first) = s.split_once(' ').unwrap_or((s, ""));
-        Some(json!({ "firstName": first.trim(), "lastName": last }))
-    };
     let mut staff = Map::new();
-    if let Some(c) = person(&team.coach) {
-        staff.insert("coach".into(), c);
-    }
-    if let Some(c) = person(&team.assistant) {
-        staff.insert("assistantCoach".into(), c);
+    for (key, p) in STAFF_KEYS.into_iter().zip(team.staff.people()) {
+        let mut o = Map::new();
+        for (k, v) in [("firstName", &p.first_name), ("lastName", &p.last_name)] {
+            if !v.trim().is_empty() {
+                o.insert(k.into(), json!(v.trim()));
+            }
+        }
+        if !o.is_empty() {
+            staff.insert(key.into(), Value::Object(o));
+        }
     }
     let mut obj = Map::new();
     obj.insert("code".into(), json!(team.code));
@@ -361,6 +440,9 @@ pub fn write_vst(team: &TeamFile) -> Vec<u8> {
     }
     if let Some(c) = team.players.iter().find(|p| p.captain) {
         obj.insert("captain".into(), json!(c.number));
+    }
+    if !team.home_court.trim().is_empty() {
+        obj.insert("homeCourtName".into(), json!(team.home_court.trim()));
     }
     let players: Vec<Value> = team
         .players
@@ -386,8 +468,14 @@ pub fn write_vst(team: &TeamFile) -> Vec<u8> {
             if let Some(d) = &p.birth_date {
                 o.insert("birthDate".into(), json!(format!("{d}T00:00:00.000Z")));
             }
-            if let Some(h) = p.height_cm {
-                o.insert("height".into(), json!(h));
+            for (k, v) in [
+                ("height", p.height_cm),
+                ("weight", p.weight_kg),
+                ("spikeHeight", p.reach_cm),
+            ] {
+                if let Some(v) = v {
+                    o.insert(k.into(), json!(v));
+                }
             }
             Value::Object(o)
         })
@@ -400,7 +488,7 @@ pub fn write_vst(team: &TeamFile) -> Vec<u8> {
 mod tests {
     use super::*;
 
-    // The made-up examples in docs/research/VOLLEYSTATION.md "Team files".
+    // Made-up examples in each file's layout.
     fn datavolley_sq() -> Vec<u8> {
         let rows = [
             "DV-Team-2".to_owned(),
@@ -421,7 +509,7 @@ mod tests {
             (
                 t.code.as_str(),
                 t.name.as_str(),
-                t.coach.as_str(),
+                t.staff.coach.last_first().as_str(),
                 t.short_code.as_str()
             ),
             ("HCV", "Harbour City", "Marlow Dennis", "HCV")
@@ -521,7 +609,7 @@ mod tests {
         let t = sample();
         let back = parse_vst(&write_vst(&t)).expect("read back");
         assert_eq!(back.name, t.name);
-        assert_eq!(back.coach, "Marlow Dennis");
+        assert_eq!(back.staff.coach.last_first(), "Marlow Dennis");
         assert_eq!(
             back.players,
             t.players
@@ -537,17 +625,35 @@ mod tests {
     #[test]
     fn reads_a_vst() {
         let json = r#"{"code":"HCV","shortCode":"HCV","name":"Harbour City",
-            "staff":{"coach":{"firstName":"Dennis","lastName":"Marlow"},"assistantCoach":{"firstName":"Tess","lastName":"Okafor"}},
-            "captain":3,
+            "staff":{"coach":{"firstName":"Dennis","lastName":"Marlow"},"assistantCoach":{"firstName":"Tess","lastName":"Okafor"},"therapist":{"lastName":"Vance"}},
+            "captain":3,"homeCourtName":"Quayside Arena",
             "players":[
-              {"code":"HCV-ARD","firstName":"Jonah","lastName":"Ardent","isForeign":false,"shirtNumber":3,"position":1,"birthDate":"2001-03-14T00:00:00.000Z","height":192},
+              {"code":"HCV-ARD","firstName":"Jonah","lastName":"Ardent","isForeign":false,"shirtNumber":3,"position":1,"birthDate":"2001-03-14T00:00:00.000Z","height":192,"weight":84,"spikeHeight":338},
               {"code":"HCV-QUI","firstName":"Maya","lastName":"Quill","isForeign":true,"shirtNumber":7,"position":0},
               {"code":"HCV-BRA","firstName":"Nell","lastName":"Brannigan","isForeign":false,"shirtNumber":11,"position":4}]}"#;
         let t = parse_vst(json.as_bytes()).expect("vst");
         assert_eq!(
-            (t.name.as_str(), t.coach.as_str(), t.assistant.as_str()),
-            ("Harbour City", "Marlow Dennis", "Okafor Tess")
+            (
+                t.name.as_str(),
+                t.staff.coach.last_first().as_str(),
+                t.staff.assistant.first_name.as_str(),
+                t.staff.physio.last_name.as_str(),
+                t.home_court.as_str()
+            ),
+            (
+                "Harbour City",
+                "Marlow Dennis",
+                "Tess",
+                "Vance",
+                "Quayside Arena"
+            )
         );
+        assert_eq!(
+            (t.players[0].weight_kg, t.players[0].reach_cm),
+            (Some(84), Some(338))
+        );
+        // Everything a .vst holds comes back from one Courtside writes.
+        assert_eq!(parse_vst(&write_vst(&t)).expect("read back"), t);
         let a = &t.players[0];
         assert!(a.captain);
         assert_eq!(

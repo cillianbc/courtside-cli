@@ -81,6 +81,14 @@ fn sheet(players: &[Player], volleystation: bool) -> TeamSheet {
                     }),
                     libero: p.special_role().trim() == "L"
                         || (!volleystation && p.role() == Some(Role::Libero)),
+                    role: p.role().map(|r| match r {
+                        Role::Libero => 1,
+                        Role::Outside => 2,
+                        Role::Opposite => 3,
+                        Role::Middle => 4,
+                        Role::Setter => 5,
+                        Role::Unknown => 6,
+                    }),
                 })
             })
             .collect(),

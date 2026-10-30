@@ -12,7 +12,7 @@
 //!   dig and `E` when someone else set or they want the set's details
 //!   (`4EK1`: a setter call fills type and evaluation like a combination
 //!   does);
-//! - VolleyStation's order (docs/research/VOLLEYSTATION.md §12): a call or
+//! - VolleyStation's order (its public help articles): a call or
 //!   combination may stand in for the skill (`4K1`, `8X5#`), zones go
 //!   before the evaluation (`9AQ35#`) and the extended part after it, no
 //!   `~` (`8X5#T2`: a tip against two blockers); `~` or a combination or
@@ -25,7 +25,7 @@
 //!   (an attack pairs with a block unless `D` is typed), the type copied,
 //!   the zones shared (a block's zone mirrors the attack's, 4 ↔ 2), and
 //!   whichever evaluation is missing derived from the other one
-//!   (docs/research/DATAVOLLEY4.md §3, VOLLEYSTATION.md §5);
+//!   (as both programs fill it in);
 //! - commands (`T`, `c6.7`, `z3`, `P5`, `p25:23`) work without the `*`;
 //!   substitution and point numbers are padded to two digits, a setter
 //!   number is kept as typed (DataVolley writes `aP2`).
@@ -413,7 +413,7 @@ fn complete(
 }
 
 /// Positions 7 on, from what was typed around the evaluation
-/// (docs/research/VOLLEYSTATION.md §12). Before it: a call or combination
+/// (VolleyStation's order, from its public help articles). Before it: a call or combination
 /// (two characters), a set's target, one or two zones and an end subzone.
 /// One zone is the start zone, except on a set (DataVolley keeps a set's
 /// zone as its end zone) or after a combination (which gives the start).
@@ -428,7 +428,7 @@ fn layout(skill: Skill, t: &Typed, d: &Defaults) -> Result<String, String> {
             (skill == Skill::Set && c.starts_with('K')) || d.combination(c).is_some()
         })
     };
-    let ext = extended(skill, post);
+    let ext = extended(skill, post, t.evaluation);
     if post.contains('~') || named(post) || (ext.is_none() && !post.is_empty()) {
         if !pre.is_empty() {
             return Err(format!(
@@ -479,11 +479,19 @@ fn layout(skill: Skill, t: &Typed, d: &Defaults) -> Result<String, String> {
 
 /// The extended part typed after the evaluation, as subtype, number of
 /// players and special (`~` where left out), with the values each skill
-/// takes (docs/research/DATAVOLLEY4.md §3); `None` if it isn't one.
-fn extended(skill: Skill, text: &str) -> Option<[char; 3]> {
+/// takes (the meanings as openvolley's `datavolley` reads them); `None` if it isn't one.
+///
+/// VolleyStation types an overhead reception `Z` (its help article
+/// "Reception code"), which DataVolley and VolleyStation's own `.dvw`
+/// exports write as `O`; DataVolley's `Z` is a referee call, which only
+/// comes on a reception error. So `Z` on a reception that isn't an error
+/// is overhand.
+fn extended(skill: Skill, text: &str, evaluation: Option<char>) -> Option<[char; 3]> {
+    let overhead = skill == Skill::Reception && evaluation.is_some_and(|e| e != '=');
     let (subtypes, players, specials) = match skill {
         Skill::Attack => ("HPT", "01234", "SOFXNCIZA"),
         Skill::Block => ("AT", "01234", "SOFXNIPZT"),
+        Skill::Reception if overhead => ("LRWOMZ", "123456789", "UXPZE"),
         Skill::Reception => ("LRWOM", "123456789", "UXPZE"),
         Skill::Dig => ("SCBE", "", "UXPZEFO"),
         Skill::Set => ("12345", "", "UIZ"),
@@ -493,7 +501,10 @@ fn extended(skill: Skill, text: &str) -> Option<[char; 3]> {
     };
     let mut p = text.chars().peekable();
     let mut take = |set: &str| p.next_if(|c| set.contains(*c)).unwrap_or('~');
-    let out = [take(subtypes), take(players), take(specials)];
+    let mut out = [take(subtypes), take(players), take(specials)];
+    if overhead && out[0] == 'Z' {
+        out[0] = 'O';
+    }
     p.next().is_none().then_some(out)
 }
 
@@ -523,8 +534,8 @@ fn build(
 }
 
 /// What the second half of a pair may be rated, given the first half's
-/// rating, in VolleyStation's rally-flow order (its shipped table, read
-/// from its code: docs/research/VOLLEYSTATION.md §5; GitHub #22). A serve
+/// rating, in the rally-flow order VolleyStation applies when it fills in a
+/// pair (GitHub #22). A serve
 /// `-` lets the pass be `+` or `#`; the others allow one rating.
 fn second_allowed(first: Skill, second: Skill, ev: char) -> Option<&'static [char]> {
     Some(match (first, second, ev) {
@@ -786,7 +797,7 @@ pub fn follow_pair(old: &Touch, new: &Touch, partner: &Touch, edited_first: bool
 /// An attack's combination was corrected from `old` to `new`; `set` is the
 /// touch straight before it. When that is the same team's set, its target
 /// follows the new combination's, as DataVolley and VolleyStation re-derive
-/// it (docs/research/VOLLEYSTATION.md §8): only where the set had no target
+/// it: only where the set had no target
 /// or still had the old combination's, so a target the scout typed stays.
 /// `None` when nothing changes.
 pub fn follow_combination(old: &Touch, new: &Touch, set: &Touch, d: &Defaults) -> Option<Touch> {
@@ -1019,8 +1030,55 @@ mod tests {
         );
     }
 
-    /// VolleyStation's order (docs/research/VOLLEYSTATION.md §12): zones
+    /// VolleyStation's order (its public help articles): zones
     /// before the evaluation, the extended part after it, no `~`.
+    /// The examples in VolleyStation's help articles (attack, block,
+    /// setting and reception codes), read 2026-10-28.
+    #[test]
+    fn volleystation_help_examples() {
+        let all = |s: &str, before: &str| {
+            let b = touch(before);
+            expand(s, Some(&b), &Defaults::default())
+                .unwrap_or_else(|e| panic!("{s}: {e}"))
+                .codes
+                .iter()
+                .map(ToString::to_string)
+                .collect::<Vec<_>>()
+        };
+        let set = "*01EH+";
+        // Attack: zones, subzone; hit, blockers, how it ended.
+        assert_eq!(all("*17AQ36A#", "*01EQ+"), ["*17AQ#~~~36A"]);
+        assert_eq!(all("*07AH48#T3", set), ["*07AH#~~~48~T3"]);
+        assert_eq!(all("*12AT26=H1O", set), ["*12AT=~~~26~H1O"]);
+        // A dot adds the other team's block or dig.
+        assert_eq!(all("a05AT45#.5=", "a03ET+"), ["a05AT#~~~45", "*05BT=~~~2"]);
+        assert_eq!(all("*12AH26-.10D", set), ["*12AH-~~~26", "a10DH+~~~26"]);
+        // Block: assist or attempt, blockers, how it ended.
+        assert_eq!(
+            all("*12AH26/.10B#A2N", set),
+            ["*12AH/~~~26", "a10BH#~~~4~~A2N"]
+        );
+        assert_eq!(
+            all("*12AH26/.10B#T3Z", set),
+            ["*12AH/~~~26", "a10BH#~~~4~~T3Z"]
+        );
+        assert_eq!(
+            all("*12AH26/.10B=1P", set),
+            ["*12AH/~~~26", "a10BH=~~~4~~~1P"]
+        );
+        // Set: call, zone and subzone; the hands; unhittable, net, referee.
+        let pass = "*14RH#";
+        assert_eq!(all("*10K13C+", pass), ["*10EH+K1~~3C"]);
+        assert_eq!(all("*10K13C+2U", pass), ["*10EH+K1~~3C2~U"]);
+        assert_eq!(all("*10K1+5Z", pass), ["*10EH+K1~~~~5~Z"]);
+        // Reception: VolleyStation's Z is overhead, written O as its .dvw
+        // exports do; on a reception error Z stays DataVolley's referee call.
+        let serve = "a07SH-";
+        assert_eq!(all("*02RH+Z", serve), ["*02RH+~~~~~~O"]);
+        assert_eq!(all("*02RH#L3", serve), ["*02RH#~~~~~~L3"]);
+        assert_eq!(all("*02RH=Z", serve), ["*02RH=~~~~~~~~Z"]);
+    }
+
     #[test]
     fn volleystation_order() {
         let d = Defaults {
@@ -1062,8 +1120,8 @@ mod tests {
         );
         assert_eq!(with("4K1F#", rec), "*04EH#K1F");
         assert_eq!(
-            with("6K13C+", rec),
-            "*06EH+K1~~3C",
+            with("5K12B+", rec),
+            "*05EH+K1~~2B",
             "a set's zone is its end zone"
         );
         assert_eq!(with("4E#2", rec), "*04EH#~~~~~~2", "two hands");

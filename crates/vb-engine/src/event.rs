@@ -80,8 +80,8 @@ pub enum Body {
     },
     /// The set after it is a golden set (CEV two-legged ties): played
     /// after the match is decided, to 15. Entered in the console. How
-    /// DataVolley marks one in a `.dvw` is not known yet (research
-    /// DATAVOLLEY4.md §1 item 10); export writes no `[3SCOUT]` line for it.
+    /// DataVolley marks one in a `.dvw` is not known yet (no file in the
+    /// corpus has one); export writes no `[3SCOUT]` line for it.
     GoldenSet,
 }
 
