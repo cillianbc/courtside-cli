@@ -648,13 +648,13 @@ Ref A, Ref B;120;;Cork;Main Hall;Scout X;;;;;\r\n\
 True;8 -7;16-14;21-17;25-19;22;\r\n\
 True;;;;;;\r\n\
 [3PLAYERS-H]\r\n\
-0;9;1;1;*;;;;H09;Byrne;Si\xe1n;;C;5;False;H09;;\x0f24279726E65;\x0f25369E16E;\x0f2;;;\r\n\
+0;9;1;1;*;;;;H09;Quillan;Si\xe1n;;C;5;False;H09;;\x0f25175696C6C616E;\x0f25369E16E;\x0f2;;;\r\n\
 [3PLAYERS-V]\r\n\
 1;4;1;2;;;;;V04;Ng;Ana;;L;1;;;V04;;;;;2;;;\r\n\
 [3ATTACKCOMBINATION]\r\n\
 X5;4;R;H;Shoot;;65280;4868;F;;\r\n\
 [3SETTERCALL]\r\n\
-K1;;Front Quick;;255;;;;;;\r\n\
+K1;;Quick in front;;255;;;;;;\r\n\
 [3WINNINGSYMBOLS]\r\n\
 =~~~#~~~=~~~~~~~=/~~#~~~=/~~#~~~=~~~~~~~=~~~~~~~=~~~~~~~\r\n\
 [3RESERVE]\r\n\
@@ -702,13 +702,13 @@ Camera0=C:\\video\\a=b.mp4\r\n\
         assert_eq!(dvw.players_visiting[0].role(), Some(Role::Libero));
         assert_eq!(
             dvw.player(true, 9).map(|p| p.last_name()).as_deref(),
-            Some("Byrne")
+            Some("Quillan")
         );
         assert!(dvw.player(false, 9).is_none());
 
         assert_eq!(dvw.attack_combinations[0].code(), "X5");
         assert_eq!(dvw.attack_combinations[0].target_attacker(), "F");
-        assert_eq!(dvw.setter_calls[0].description(), "Front Quick");
+        assert_eq!(dvw.setter_calls[0].description(), "Quick in front");
         assert_eq!(
             dvw.winning_symbols.for_skill('A'),
             Some((vec!['=', '/'], vec!['#']))

@@ -218,8 +218,7 @@ fn zone_of(st: &State, team: Team, n: u8) -> Option<usize> {
 }
 
 /// The setter position one rotation on from `p` (1 → 6 → 5 …).
-/// Whether a pass rated `r` can follow a serve rated `s`: DataVolley's and
-/// VolleyStation's default tables agree (`S#`–`R=`, `S/`–`R/`, `S-`–`R#`/`R+`,
+/// Whether a pass rated `r` can follow a serve rated `s`: the usual pairs (`S#`–`R=`, `S/`–`R/`, `S-`–`R#`/`R+`,
 /// `S+`–`R-`, `S!`–`R!`), and many DataVolley 4 files in the corpus pair
 /// `S+`–`R!` and `S!`–`R+` instead (FORMAT-NOTES), so either goes. A rating
 /// outside the usual symbols isn't judged here.

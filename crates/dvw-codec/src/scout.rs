@@ -141,7 +141,7 @@ mod tests {
 
     #[test]
     fn set_end_line_has_no_players() {
-        let l = line("**3set;;;;;;;16.45.29;4;5;4;;;;;;;;;;;;;;;;");
+        let l = line("**3set;;;;;;;20.10.05;4;5;4;;;;;;;;;;;;;;;;");
         assert_eq!(l.code(), "**3set");
         assert_eq!(l.home_players(), [None; 6]);
         assert_eq!(l.point_phase(), None);

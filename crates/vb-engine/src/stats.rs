@@ -33,7 +33,7 @@ pub struct SymbolSets {
 }
 
 impl SymbolSets {
-    /// DataVolley 4's default efficiency table.
+    /// How DataVolley 4 counts positive and negative by default.
     pub const DATAVOLLEY: SymbolSets = SymbolSets {
         name: "DataVolley 4 defaults",
         skills: [
@@ -47,7 +47,7 @@ impl SymbolSets {
         ],
     };
 
-    /// VolleyStation Pro's default winning/losing symbols.
+    /// How VolleyStation Pro counts positive and negative by default.
     pub const VOLLEYSTATION: SymbolSets = SymbolSets {
         name: "VolleyStation Pro defaults",
         skills: [

@@ -489,14 +489,14 @@ fn layout(skill: Skill, t: &Typed, d: &Defaults) -> Result<String, String> {
 fn extended(skill: Skill, text: &str, evaluation: Option<char>) -> Option<[char; 3]> {
     let overhead = skill == Skill::Reception && evaluation.is_some_and(|e| e != '=');
     let (subtypes, players, specials) = match skill {
-        Skill::Attack => ("HPT", "01234", "SOFXNCIZA"),
-        Skill::Block => ("AT", "01234", "SOFXNIPZT"),
-        Skill::Reception if overhead => ("LRWOMZ", "123456789", "UXPZE"),
-        Skill::Reception => ("LRWOM", "123456789", "UXPZE"),
-        Skill::Dig => ("SCBE", "", "UXPZEFO"),
-        Skill::Set => ("12345", "", "UIZ"),
-        Skill::Serve => ("", "", "OLRNZ"),
-        Skill::Freeball => ("", "", "UXPZE"),
+        Skill::Attack => ("HPT", "01234", "ACFINOSXZ"),
+        Skill::Block => ("AT", "01234", "FINOPSTXZ"),
+        Skill::Reception if overhead => ("LMORWZ", "123456789", "EPUXZ"),
+        Skill::Reception => ("LMORW", "123456789", "EPUXZ"),
+        Skill::Dig => ("BCES", "", "EFOPUXZ"),
+        Skill::Set => ("12345", "", "IUZ"),
+        Skill::Serve => ("", "", "LNORZ"),
+        Skill::Freeball => ("", "", "EPUXZ"),
         Skill::Green => ("", "", ""),
     };
     let mut p = text.chars().peekable();
@@ -534,31 +534,23 @@ fn build(
 }
 
 /// What the second half of a pair may be rated, given the first half's
-/// rating, in the rally-flow order VolleyStation applies when it fills in a
-/// pair (GitHub #22). A serve
-/// `-` lets the pass be `+` or `#`; the others allow one rating.
-fn second_allowed(first: Skill, second: Skill, ev: char) -> Option<&'static [char]> {
-    Some(match (first, second, ev) {
-        (Skill::Serve, Skill::Reception, '/') => &['/'],
-        (Skill::Serve, Skill::Reception, '-') => &['+', '#'],
-        (Skill::Serve, Skill::Reception, '!') => &['!'],
-        (Skill::Serve, Skill::Reception, '+') => &['-'],
-        (Skill::Serve, Skill::Reception, '#') => &['='],
-        (Skill::Attack, Skill::Block, '/') => &['#'],
-        (Skill::Attack, Skill::Block, '-') => &['+'],
-        (Skill::Attack, Skill::Block, '!') => &['!'],
-        (Skill::Attack, Skill::Block, '+') => &['-'],
-        (Skill::Attack, Skill::Block, '#') => &['='],
-        (Skill::Attack, Skill::Dig, '-') => &['+', '-', '#'],
-        (Skill::Attack, Skill::Dig, '+') => &['-'],
-        (Skill::Attack, Skill::Dig, '#') => &['='],
-        _ => return None,
-    })
+/// rating (GitHub #22): each rating whose usual first half is `ev`
+/// (`first_from_second` read backwards), a good one before a perfect one;
+/// a weak attack can also be dug weakly.
+fn second_allowed(first: Skill, second: Skill, ev: char) -> Option<Vec<char>> {
+    let mut allowed: Vec<char> = ['+', '#', '-', '!', '/', '=']
+        .into_iter()
+        .filter(|&r| first_from_second(first, second, r) == Some(ev))
+        .collect();
+    if (first, second, ev) == (Skill::Attack, Skill::Dig, '-') {
+        allowed.push('-');
+    }
+    (!allowed.is_empty()).then_some(allowed)
 }
 
-/// The second half's rating for the first half's, as VolleyStation fills
-/// a pair: `keep` (the season's default, or what the half already had)
-/// when the first half allows it, else the first rating it allows. So a
+/// The second half's rating for the first half's: `keep` (the season's
+/// default, or what the half already had) when the first half allows it,
+/// else the first rating it allows. So a
 /// serve `-` gives the default `+` pass, not a perfect one.
 fn second_from_first(first: Skill, second: Skill, ev: char, keep: Option<char>) -> Option<char> {
     let allowed = second_allowed(first, second, ev)?;
@@ -566,7 +558,9 @@ fn second_from_first(first: Skill, second: Skill, ev: char, keep: Option<char>) 
         .or_else(|| allowed.first().copied())
 }
 
-/// The first half's evaluation for the second half's, by pair.
+/// The first half's evaluation for the second half's, by pair: the usual
+/// reading of a rally (a perfect pass means an easy serve, a kill a dig
+/// error, a stuff block a blocked attack).
 fn first_from_second(first: Skill, second: Skill, ev: char) -> Option<char> {
     Some(match (first, second, ev) {
         (Skill::Serve, Skill::Reception, '/') => '/',
@@ -1030,12 +1024,11 @@ mod tests {
         );
     }
 
-    /// VolleyStation's order (its public help articles): zones
-    /// before the evaluation, the extended part after it, no `~`.
-    /// The examples in VolleyStation's help articles (attack, block,
-    /// setting and reception codes), read 2026-10-28.
+    /// VolleyStation's documented input order, with made-up codes: zones
+    /// before the evaluation, the extended part after it, no `~`; each
+    /// kind of code its help describes (attack, block, set, reception).
     #[test]
-    fn volleystation_help_examples() {
+    fn volleystation_input_order() {
         let all = |s: &str, before: &str| {
             let b = touch(before);
             expand(s, Some(&b), &Defaults::default())
@@ -1047,36 +1040,36 @@ mod tests {
         };
         let set = "*01EH+";
         // Attack: zones, subzone; hit, blockers, how it ended.
-        assert_eq!(all("*17AQ36A#", "*01EQ+"), ["*17AQ#~~~36A"]);
-        assert_eq!(all("*07AH48#T3", set), ["*07AH#~~~48~T3"]);
-        assert_eq!(all("*12AT26=H1O", set), ["*12AT=~~~26~H1O"]);
+        assert_eq!(all("*15AQ37B#", "*01EQ+"), ["*15AQ#~~~37B"]);
+        assert_eq!(all("*08AH49#T2", set), ["*08AH#~~~49~T2"]);
+        assert_eq!(all("*13AT25=P1S", set), ["*13AT=~~~25~P1S"]);
         // A dot adds the other team's block or dig.
-        assert_eq!(all("a05AT45#.5=", "a03ET+"), ["a05AT#~~~45", "*05BT=~~~2"]);
-        assert_eq!(all("*12AH26-.10D", set), ["*12AH-~~~26", "a10DH+~~~26"]);
+        assert_eq!(all("a06AT43#.4=", "a03ET+"), ["a06AT#~~~43", "*04BT=~~~2"]);
+        assert_eq!(all("*11AH25-.9D", set), ["*11AH-~~~25", "a09DH+~~~25"]);
         // Block: assist or attempt, blockers, how it ended.
         assert_eq!(
-            all("*12AH26/.10B#A2N", set),
-            ["*12AH/~~~26", "a10BH#~~~4~~A2N"]
+            all("*14AH27/.8B#A3S", set),
+            ["*14AH/~~~27", "a08BH#~~~4~~A3S"]
         );
         assert_eq!(
-            all("*12AH26/.10B#T3Z", set),
-            ["*12AH/~~~26", "a10BH#~~~4~~T3Z"]
+            all("*14AH27/.8B#T2O", set),
+            ["*14AH/~~~27", "a08BH#~~~4~~T2O"]
         );
         assert_eq!(
-            all("*12AH26/.10B=1P", set),
-            ["*12AH/~~~26", "a10BH=~~~4~~~1P"]
+            all("*14AH27/.8B=2N", set),
+            ["*14AH/~~~27", "a08BH=~~~4~~~2N"]
         );
         // Set: call, zone and subzone; the hands; unhittable, net, referee.
         let pass = "*14RH#";
-        assert_eq!(all("*10K13C+", pass), ["*10EH+K1~~3C"]);
-        assert_eq!(all("*10K13C+2U", pass), ["*10EH+K1~~3C2~U"]);
-        assert_eq!(all("*10K1+5Z", pass), ["*10EH+K1~~~~5~Z"]);
+        assert_eq!(all("*09K22B+", pass), ["*09EH+K2~~2B"]);
+        assert_eq!(all("*09K22B+1I", pass), ["*09EH+K2~~2B1~I"]);
+        assert_eq!(all("*09K7+3U", pass), ["*09EH+K7~~~~3~U"]);
         // Reception: VolleyStation's Z is overhead, written O as its .dvw
         // exports do; on a reception error Z stays DataVolley's referee call.
         let serve = "a07SH-";
-        assert_eq!(all("*02RH+Z", serve), ["*02RH+~~~~~~O"]);
-        assert_eq!(all("*02RH#L3", serve), ["*02RH#~~~~~~L3"]);
-        assert_eq!(all("*02RH=Z", serve), ["*02RH=~~~~~~~~Z"]);
+        assert_eq!(all("*05RH+Z", serve), ["*05RH+~~~~~~O"]);
+        assert_eq!(all("*05RH#R5", serve), ["*05RH#~~~~~~R5"]);
+        assert_eq!(all("*05RH=Z", serve), ["*05RH=~~~~~~~~Z"]);
     }
 
     #[test]
@@ -1141,7 +1134,7 @@ mod tests {
     #[test]
     fn a_dot_in_custom_text_is_text() {
         let d = Defaults::default();
-        for code in ["*09EQ+K7C~4~2~~14F.+", "a11RQ=~~~11A~~~."] {
+        for code in ["*06EQ+K2C~3~2~~25B.+", "a14RQ=~~~31C~~~."] {
             let x = expand(code, None, &d).expect(code);
             assert_eq!(x.codes.len(), 1, "{code}");
             assert_eq!(x.codes[0].to_string(), code);

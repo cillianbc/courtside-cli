@@ -152,7 +152,7 @@ pub struct WinningSymbols {
 }
 
 impl Default for WinningSymbols {
-    /// DataVolley's defaults, as in every corpus file.
+    /// As DataVolley files write them.
     fn default() -> Self {
         let row =
             |skill, lose: &str, win: &str| (skill, lose.chars().collect(), win.chars().collect());
