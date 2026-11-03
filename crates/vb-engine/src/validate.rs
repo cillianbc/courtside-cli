@@ -718,7 +718,7 @@ impl Validator<'_> {
             // Liberos are never among the six on court (both products keep
             // them out). Players missing from the team sheet are a Code
             // error already.
-            if sheet.is_libero(n)
+            if self.f.is_libero(self.m, team, st.set, n)
                 || sheet.player(n).is_none()
                 || st.court.get(team).iter().all(Option::is_none)
             {
@@ -832,21 +832,33 @@ impl Validator<'_> {
             let Some((team, n)) = touch_player(code) else {
                 continue;
             };
-            if !self.m.teams.get(team).is_libero(n) {
+            let set = self.f.states[i].set;
+            if !self.f.is_libero(self.m, team, set, n) {
                 continue;
             }
-            let set = self.f.states[i].set;
             if zone_of(&self.f.states[i], team, n).is_some() {
                 if mislabelled.insert((set, team, n)) {
+                    let chosen = self
+                        .f
+                        .liberos
+                        .iter()
+                        .any(|(s, t, _)| *s == set && *t == team);
                     self.push(
                         i,
                         Severity::Warning,
                         Rule::Substitution,
                         IssueKind::LiberoOnCourt(team),
-                        format!(
-                            "{} player {n} is a libero on the team sheet but is on court in set {set}; team sheet wrong?",
-                            side(team)
-                        ),
+                        if chosen {
+                            format!(
+                                "{} player {n} is set {set}'s libero but is on court; lineup wrong?",
+                                side(team)
+                            )
+                        } else {
+                            format!(
+                                "{} player {n} is a libero on the team sheet but is on court in set {set}; team sheet wrong?",
+                                side(team)
+                            )
+                        },
                     );
                 }
                 continue;
@@ -904,7 +916,9 @@ impl Validator<'_> {
                     format!("player {out} replaced by themselves"),
                 ));
             }
-            if sheet.is_libero(out) || sheet.is_libero(inn) {
+            let set = self.f.states[i].set;
+            if self.f.is_libero(self.m, team, set, out) || self.f.is_libero(self.m, team, set, inn)
+            {
                 found.push((
                     Severity::Warning,
                     IssueKind::LiberoSubstitution,
@@ -2078,6 +2092,7 @@ mod tests {
                 body: crate::event::Body::StartingSix {
                     team: Team::Home,
                     court: [8, 12, 13, 11, 3, 14],
+                    liberos: None,
                 },
                 video_ms: None,
                 clock: None,

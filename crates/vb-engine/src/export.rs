@@ -27,6 +27,8 @@
 //! - Starting zones: the team sheet's, plus `*` for a player a
 //!   substitution code brings on in a set they didn't start, and for a
 //!   libero who touches the ball in a set.
+//! - Liberos: `L` for a player chosen as a set's libero in the console
+//!   (the format has one flag per match, not per set).
 
 use dvw_codec::Dvw;
 use dvw_codec::dvw::SetResult;
@@ -257,6 +259,9 @@ fn read_zone(field: &str) -> StartingZone {
     }
 }
 
+/// `[3PLAYERS-*]` field of the special role (`L` libero, `C` captain).
+const LIBERO_FIELD: usize = 12;
+
 fn write_starting_zones(m: &Match, dvw: &mut Dvw, events: &[&MatchEvent], folded: &Folded) {
     // (team, set, player) brought on by a substitution code, or a libero
     // who touched the ball in the set (no code brings a libero on).
@@ -265,7 +270,7 @@ fn write_starting_zones(m: &Match, dvw: &mut Dvw, events: &[&MatchEvent], folded
     // replaces the team sheet's starting zones for that set.
     let mut sixes: Vec<(Team, u8, [u8; 6])> = Vec::new();
     for (e, st) in events.iter().zip(&folded.states) {
-        if let Body::StartingSix { team, court } = &e.body
+        if let Body::StartingSix { team, court, .. } = &e.body
             && !sixes.iter().any(|(t, s, _)| t == team && *s == st.set)
         {
             sixes.push((*team, st.set, *court));
@@ -279,7 +284,7 @@ fn write_starting_zones(m: &Match, dvw: &mut Dvw, events: &[&MatchEvent], folded
             Some(Code::Touch(t)) => {
                 if let vb_grammar::Player::Number(d) = &t.player
                     && let Some(n) = d.value().and_then(|v| u8::try_from(v).ok())
-                    && m.teams.get(t.team).is_libero(n)
+                    && folded.is_libero(m, t.team, st.set, n)
                 {
                     came_on.push((t.team, st.set, n));
                 }
@@ -294,6 +299,20 @@ fn write_starting_zones(m: &Match, dvw: &mut Dvw, events: &[&MatchEvent], folded
         let sheet = m.teams.get(team);
         for row in rows.iter_mut() {
             let Some(n) = row.number() else { continue };
+            // `.dvw` marks a libero once per match: a player chosen as a
+            // set's libero is written as one.
+            if folded
+                .liberos
+                .iter()
+                .any(|(_, t, chosen)| *t == team && chosen.contains(&n))
+                && row.0.get(LIBERO_FIELD).trim() != "L"
+            {
+                let fields = &mut row.0.0;
+                if fields.len() <= LIBERO_FIELD {
+                    fields.resize(LIBERO_FIELD + 1, String::new());
+                }
+                fields[LIBERO_FIELD] = "L".to_owned();
+            }
             let zones = sheet.player(n).map(|p| p.starting_zones);
             for set in 1..=5u8 {
                 let six = sixes.iter().find(|(t, s, _)| *t == team && *s == set);

@@ -94,6 +94,9 @@ pub struct Folded {
     pub rallies: Vec<Rally>,
     /// The set played as a golden set, if one was started.
     pub golden_set: Option<u8>,
+    /// Liberos chosen with a set's six (set, team, shirts), where the
+    /// scout chose them; other sets follow the team sheet.
+    pub liberos: Vec<(u8, Team, Vec<u8>)>,
 }
 
 /// Points that win a golden set.
@@ -109,6 +112,38 @@ impl Folded {
             m.regulation.set_target(set)
         }
     }
+
+    /// `team`'s liberos in `set`: the ones chosen with the set's six, else
+    /// the team sheet's.
+    pub fn liberos(&self, m: &Match, team: Team, set: u8) -> Vec<u8> {
+        match self
+            .liberos
+            .iter()
+            .find(|(s, t, _)| *s == set && *t == team)
+        {
+            Some((.., chosen)) => chosen.clone(),
+            None => m
+                .teams
+                .get(team)
+                .players
+                .iter()
+                .filter(|p| p.libero)
+                .map(|p| p.number)
+                .collect(),
+        }
+    }
+
+    /// Whether `n` plays as `team`'s libero in `set` ([`Folded::liberos`]).
+    pub fn is_libero(&self, m: &Match, team: Team, set: u8, n: u8) -> bool {
+        match self
+            .liberos
+            .iter()
+            .find(|(s, t, _)| *s == set && *t == team)
+        {
+            Some((.., chosen)) => chosen.contains(&n),
+            None => m.teams.get(team).is_libero(n),
+        }
+    }
 }
 
 pub fn fold(m: &Match) -> Folded {
@@ -120,6 +155,7 @@ pub fn fold_events(m: &Match, events: &[&MatchEvent]) -> Folded {
     let mut states: Vec<State> = Vec::with_capacity(events.len());
     let mut rallies: Vec<Rally> = Vec::new();
     let mut golden_set = None;
+    let mut liberos: Vec<(u8, Team, Vec<u8>)> = Vec::new();
     let mut st = State {
         set: 1,
         score: Score::default(),
@@ -175,8 +211,17 @@ pub fn fold_events(m: &Match, events: &[&MatchEvent]) -> Folded {
             })),
         };
 
-        if let Body::StartingSix { team, court } = &ev.body {
+        if let Body::StartingSix {
+            team,
+            court,
+            liberos: chosen,
+        } = &ev.body
+        {
             *st.court.get_mut(*team) = court.map(Some);
+            if let Some(chosen) = chosen {
+                liberos.retain(|(s, t, _)| !(*s == st.set && t == team));
+                liberos.push((st.set, *team, chosen.clone()));
+            }
         }
         if ev.body == Body::GoldenSet {
             golden_set = Some(st.set);
@@ -328,6 +373,7 @@ pub fn fold_events(m: &Match, events: &[&MatchEvent]) -> Folded {
         states,
         rallies,
         golden_set,
+        liberos,
     }
 }
 
@@ -418,6 +464,7 @@ mod tests {
                 body: Body::StartingSix {
                     team: Team::Home,
                     court: [3, 8, 12, 13, 11, 14],
+                    liberos: Some(vec![5]),
                 },
                 video_ms: None,
                 clock: None,
@@ -428,6 +475,10 @@ mod tests {
         let last = f.states.last().expect("state");
         assert_eq!(last.set, 2);
         assert_eq!(last.court.home, [3, 8, 12, 13, 11, 14].map(Some));
+        // The six's liberos are set 2's; set 1 keeps the team sheet's (none).
+        assert_eq!(f.liberos(&m, Team::Home, 2), [5]);
+        assert!(f.is_libero(&m, Team::Home, 2, 5));
+        assert!(f.liberos(&m, Team::Home, 1).is_empty());
         assert_eq!(
             last.court.visiting,
             [16, 11, 18, 6, 10, 13].map(Some),

@@ -77,6 +77,9 @@ pub enum Body {
     StartingSix {
         team: Team,
         court: [u8; 6],
+        /// The set's liberos, chosen with the six (#56); `None` leaves
+        /// them to the team sheet's `L` flags.
+        liberos: Option<Vec<u8>>,
     },
     /// The set after it is a golden set (CEV two-legged ties): played
     /// after the match is decided, to 15. Entered in the console. How
